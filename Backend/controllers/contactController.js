@@ -1,6 +1,6 @@
 import nodemailer from 'nodemailer';
 import dotenv from 'dotenv';
-import connection from '../config/mysqlConnectivity.js';  // ye import add karo
+import pool from '../config/dbConnectivity.js'; // PostgreSQL pool import karo
 
 dotenv.config();
 
@@ -8,7 +8,11 @@ export const sendContactEmail = async (req, res) => {
   const { name, email, message } = req.body;
 
   try {
-    // 1. Pehle email bhejo
+    // 1. Verify Database connection
+    const dbConnectionTest = await pool.query('SELECT NOW()');
+    console.log('Database is connected:', dbConnectionTest.rows);
+
+    // 2. Email bhejna
     const transporter = nodemailer.createTransport({
       service: 'gmail',
       auth: {
@@ -20,7 +24,7 @@ export const sendContactEmail = async (req, res) => {
     const mailOptions = {
       from: `"Portfolio Contact" <${email}>`,
       to: process.env.EMAIL_USER,
-      subject: '📬 New Contact Form Message',
+      subject: '📬 New Contact Form Message',                  
       html: `
         <h3>New Message from Portfolio</h3>
         <p><strong>Name:</strong> ${name}</p>
@@ -31,19 +35,15 @@ export const sendContactEmail = async (req, res) => {
 
     await transporter.sendMail(mailOptions);
 
-    // 2. Email bhejne ke baad database me save karo
-    const query = 'INSERT INTO contact (name, email, message) VALUES (?, ?, ?)';
-    connection.query(query, [name, email, message], (err, results) => {
-      if (err) {
-        console.error('Database insert error:', err);
-        return res.status(500).json({ error: 'Database error while saving message' });
-      }
+    // 3. PostgreSQL mein insert karna
+    const query = 'INSERT INTO contact (name, email, message) VALUES ($1, $2, $3)';
+    const values = [name, email, message];
+    await pool.query(query, values);
 
-      // Dono email bhejna aur DB me save karna successful
-      res.status(200).json({ message: 'Message sent and saved successfully!' });
-    });
+    res.status(200).json({ message: 'Message sent and saved successfully!' });
 
   } catch (error) {
-    res.status(500).json({ error: 'Error sending message: ' + error.message });
+    console.error("Database error: ", error);
+    res.status(500).json({ error: 'Error processing request: ' + error.message });
   }
 };
